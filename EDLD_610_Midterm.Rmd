@@ -114,12 +114,8 @@ gap(school_data[1:4, ], "white", "hispanic_latino")
 
 ```{r effect_size_all}
 by_school_grade_year <- school_data %>% 
-  group_by(district, school, grade_level, academic_year) %>% 
-  nest()
-
-gaps <- by_school_grade_year %>%
-  mutate(gap = map_dbl(by_school_grade_year$data, ~gap(.x, "white", "hispanic_latino")),
-         grade_level = recode(grade_level, 
+  group_by(district, school, academic_year) %>% 
+  mutate(grade_level = recode(grade_level, 
                               "Grade 3" = "3", 
                               "Grade 4" = "4", 
                               "Grade 5" = "5",
@@ -127,10 +123,19 @@ gaps <- by_school_grade_year %>%
                               "Grade 7" = "7",
                               "Grade 8" = "8",
                               "Grade HS (11)" = "11")) %>% 
-  slice(1:5) # I sliced for the first 5 cases here to make the loop go faster later
+  nest() %>% 
+  slice(1:100)
+
+gaps <- by_school_grade_year %>%
+  unnest() %>% 
+  group_by(district, school, grade_level, academic_year) %>% 
+  nest()
 
 gaps <- gaps %>% 
-  split(gaps$school) # I split by school to "nest again," like Daniel suggested
+  mutate(gap = map_dbl(gaps$data, ~gap(.x, "white", "hispanic_latino")))
+
+gaps <- gaps %>% 
+  split(paste(gaps$district, gaps$school))
 
 head(gaps)
 ```
@@ -141,18 +146,20 @@ head(gaps)
 library(colorblindr)
 theme_set(theme_minimal())
 
-# This code seems to work - I tried running scale_fill_OkabeIto with this code chunk, and I get an error back that says "continuous value supplied to discrete scale
 plots <- lapply(gaps, function(x) {
-  ggplot(x, aes(x = grade_level, y = gap, fill = gap)) +
-    geom_bar(stat = "identity") +
+  ggplot(x, aes(x = grade_level, y = gap)) +
+    geom_bar(stat = "identity", aes(fill = gap)) +
+    scale_fill_viridis_c(limits = c(-1.5, 1.5)) +
     geom_hline(yintercept = 0, color = "black", size = 1.5) +
     coord_flip() +
-    labs(x = "Grade", y = "Effect Size", title = "Achievement Gap Estimates: ", paste0(names(gap)), subtitle = "Students coded as white as compared to those coded as Hispanic/Latino", caption = "School year, school, placeholder :)") + # Unsure how to get information from our data to paste in the title, subtitle, caption, etc.
+    labs(x = "Grade", y = "Effect Size", title = paste0("Achievement Gap Estimates: ", x$school), subtitle = "Students coded as White as compared to those coded as Hispanic/Latino", caption = paste0(x$academic_year, " School year, ", x$district, ", Oregon")) +
     theme(legend.position = "bottom",
           plot.title = element_text(face = "bold", hjust = 0.5), 
           plot.subtitle = element_text(hjust = 0.5),
-          axis.title = element_text(face = "bold"))
-})
+          axis.title = element_text(face = "bold"),
+          legend.key.width = unit(15, "mm"))
+}) #updated this: added the necessary info (district, year, etc.) throughout the plot, adjusted the legend size and limits to be consistent throughout the plots.  Can't figure out the okabeito, so I went for my favorite color scheme, Viridis. :)  -kg
+  
 ```
 
 3. Save the plots into a "plots" directory. Make sure the file names are meaningful.
@@ -160,11 +167,16 @@ plots <- lapply(gaps, function(x) {
 ```{r save_plots}
 dir.create(here::here("plots"))
 filenames <- here::here("plots", 
-                        paste0("school_", names(gaps), "_grade_", ".png"))
+                        paste0(map(gaps, ~.x$district[1]), "_", map(gaps, ~.x$school[1]), "_", map(gaps, ~.x$academic_year[1]), ".png")) #changed the file name to read school_year.png, since I thought that might be a little more meaningful?  -kg
 
-for(i in seq_along(plots)) {
-    ggsave(filenames[i],
-           plots[[i]],
-           device = "png")
-  }
+walk2(filenames, plots, ggsave,
+      width = 9.5, 
+      height = 6.5,
+      dpi = 500)
+
+#for(i in seq_along(plots)) {
+#    ggsave(filenames[i],
+#           plots[[i]],
+#           device = "png")
+#}
 ```
